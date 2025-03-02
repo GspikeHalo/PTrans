@@ -1,0 +1,124 @@
+{
+  "operators": [
+    {
+      "operatorID": "CSVFileScan-operator-3e75eca2-ad92-4d8b-844a-be595099e7b6",
+      "operatorType": "CSVFileScan",
+      "operatorVersion": "N/A",
+      "operatorProperties": {
+        "fileEncoding": "UTF_8",
+        "customDelimiter": ",",
+        "hasHeader": true,
+        "fileName": "data1.csv"
+      },
+      "inputPorts": [],
+      "outputPorts": [
+        {
+          "portID": "output-0",
+          "displayName": "data1.csv",
+          "allowMultiInputs": false,
+          "isDynamicPort": false
+        }
+      ],
+      "showAdvanced": false,
+      "isDisabled": false,
+      "customDisplayName": "CSVFileScan",
+      "dynamicInputPorts": false,
+      "dynamicOutputPorts": false
+    },
+    {
+      "operatorID": "CSVFileScan-operator-93d4df9a-33fb-4db2-ab3d-28f4dc7a1dfe",
+      "operatorType": "CSVFileScan",
+      "operatorVersion": "N/A",
+      "operatorProperties": {
+        "fileEncoding": "UTF_8",
+        "customDelimiter": ",",
+        "hasHeader": true,
+        "fileName": "data2.csv"
+      },
+      "inputPorts": [],
+      "outputPorts": [
+        {
+          "portID": "output-0",
+          "displayName": "data2.csv",
+          "allowMultiInputs": false,
+          "isDynamicPort": false
+        }
+      ],
+      "showAdvanced": false,
+      "isDisabled": false,
+      "customDisplayName": "CSVFileScan",
+      "dynamicInputPorts": false,
+      "dynamicOutputPorts": false
+    },
+    {
+      "operatorID": "Union-operator-79dfd390-a471-43d2-aa2b-9097c987c0af",
+      "operatorType": "Union",
+      "operatorVersion": "N/A",
+      "operatorProperties": {},
+      "inputPorts": [
+        {
+          "portID": "input-0",
+          "displayName": "",
+          "allowMultiInputs": true,
+          "isDynamicPort": false,
+          "dependencies": []
+        }
+      ],
+      "outputPorts": [
+        {
+          "portID": "output-0",
+          "displayName": "",
+          "allowMultiInputs": false,
+          "isDynamicPort": false
+        }
+      ],
+      "showAdvanced": false,
+      "isDisabled": false,
+      "customDisplayName": "Union",
+      "dynamicInputPorts": false,
+      "dynamicOutputPorts": false
+    }
+  ],
+  "operatorPositions": {
+    "CSVFileScan-operator-3e75eca2-ad92-4d8b-844a-be595099e7b6": {
+      "x": 0,
+      "y": 0
+    },
+    "CSVFileScan-operator-93d4df9a-33fb-4db2-ab3d-28f4dc7a1dfe": {
+      "x": 0,
+      "y": 0
+    },
+    "Union-operator-79dfd390-a471-43d2-aa2b-9097c987c0af": {
+      "x": 0,
+      "y": 0
+    }
+  },
+  "links": [
+    {
+      "linkID": "0d1ef8d9-dcda-49dd-b4f6-57015770510a",
+      "source": {
+        "operatorID": "CSVFileScan-operator-3e75eca2-ad92-4d8b-844a-be595099e7b6",
+        "portID": "output-0"
+      },
+      "target": {
+        "operatorID": "Union-operator-79dfd390-a471-43d2-aa2b-9097c987c0af",
+        "portID": "input-0"
+      }
+    },
+    {
+      "linkID": "897c8c29-5245-4553-ba9c-60430c798280",
+      "source": {
+        "operatorID": "CSVFileScan-operator-93d4df9a-33fb-4db2-ab3d-28f4dc7a1dfe",
+        "portID": "output-0"
+      },
+      "target": {
+        "operatorID": "Union-operator-79dfd390-a471-43d2-aa2b-9097c987c0af",
+        "portID": "input-0"
+      }
+    }
+  ],
+  "commentBoxes": [],
+  "settings": {
+    "dataTransferBatchSize": 400
+  }
+}
