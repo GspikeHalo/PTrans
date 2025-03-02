@@ -370,9 +370,7 @@ if __name__ == '__main__':
         }
     }
 
-    # 将 workflow 写入 JSON 文件
     with open("workflow.json", "w", encoding="utf-8") as f:
         json.dump(workflow, f, indent=2)
 
-    # 打印结果
     print(json.dumps(workflow, indent=2))
