@@ -15,9 +15,11 @@ class CodeAnalyzerManual:
 
         # call 处理器映射，key 为解析后的函数名称，value 为对应的处理器方法
         self.call_handlers = {}
-        # 注册 pandas.read_csv 的自定义处理器
-        self.call_handlers["pandas.read_csv"] = self.handle_pandas_read_csv
-        self.call_handlers["pandas.concat"] = self.handle_pandas_concat
+        self.call_handlers["list.append"] = self.handle_append
+
+        self.operators_handlers = {}
+        self.operators_handlers["pandas.read_csv"] = self.handle_pandas_read_csv
+        self.operators_handlers["pandas.concat"] = self.handle_pandas_concat
 
     def analyze(self, node):
         """从根节点开始手动遍历 AST"""
@@ -144,25 +146,43 @@ class CodeAnalyzerManual:
     def resolve_func_name(self, node):
         """
         解析函数调用的函数名。
-        支持 Name 和 Attribute 形式，如:
+        支持 Name、Attribute、Subscript 和 Call 形式，例如:
           - my_func -> "my_func"
           - pd.read_csv -> "pd.read_csv"
+          - df["col"] -> "df[col]"
+          - func()(...) -> 返回 func 的名称
         """
         if isinstance(node, ast.Name):
+            # 优先从 variable_map 中获取，如果存在则返回其 type
+            if node.id in self.variable_map:
+                return self.variable_map[node.id].type
+            # 否则使用 aliases 查找
             return self.aliases.get(node.id, node.id)
         elif isinstance(node, ast.Attribute):
             value = self.resolve_func_name(node.value)
             return f"{value}.{node.attr}" if value else node.attr
+        elif isinstance(node, ast.Subscript):
+            value = self.resolve_func_name(node.value)
+            slice_val = None
+            if isinstance(node.slice, ast.Constant):
+                slice_val = node.slice.value
+            elif hasattr(node.slice, "value"):
+                slice_val = self.resolve_func_name(node.slice.value) or self.evaluate_expr(node.slice)
+            if slice_val is not None:
+                return f"{value}[{slice_val}]"
+            else:
+                return value
+        elif isinstance(node, ast.Call):
+            return self.handle_call(node)
         return None
 
     def handle_call(self, node):
-        # todo 或许在添加的type以后可以移动这个
-        if isinstance(node.func, ast.Attribute) and node.func.attr == "append":
-            return self.handle_append(node)
-
         func_name = self.resolve_func_name(node.func)
         if func_name in self.call_handlers:
-            operator: OperatorResult = self.call_handlers[func_name](node)
+            result = self.call_handlers[func_name](node)
+            return result
+        elif func_name in self.operators_handlers:
+            operator = self.operators_handlers[func_name](node)
             self.operators[operator.op_id] = operator
             self.create_links_for_call(operator.op_id, node)
             return operator
@@ -303,6 +323,8 @@ class CodeAnalyzerManual:
         if isinstance(value, list):
             for item in value:
                 result.extend(self.collect_operator_ids(item))
+        elif isinstance(value, str) and value in self.operators:
+            result.append(value)
         elif isinstance(value, VariableInfo):
             if isinstance(value.value, list):
                 result.extend(self.collect_operator_ids(value.value))
