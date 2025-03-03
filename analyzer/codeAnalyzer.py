@@ -2,14 +2,15 @@ import ast
 import textwrap
 import uuid
 import json
-
+from variableInfo import VariableInfo
+from operatorResult import OperatorResult
 
 class CodeAnalyzerManual:
     def __init__(self):
         self.aliases = {}  # 别名映射表： {别名: 完整原始路径}
         self.current_scope = ["global"]  # 作用域栈（简单实现）
-        self.variable_map = {}
-        self.operators = {}
+        self.variable_map: {str: VariableInfo} = {}
+        self.operators: {str: OperatorResult} = {}
         self.links = {}
 
         # call 处理器映射，key 为解析后的函数名称，value 为对应的处理器方法
@@ -33,7 +34,7 @@ class CodeAnalyzerManual:
         elif isinstance(node, ast.ImportFrom):
             self.handle_import_from(node)
         elif isinstance(node, ast.FunctionDef):
-            # 进入函数定义，更新作用域
+            # 进入函数定义，更新作用域，暂时还没有作用
             self.current_scope.append(node.name)
             for stmt in node.body:
                 self.visit_node(stmt)
@@ -74,21 +75,6 @@ class CodeAnalyzerManual:
             else:
                 self._add_alias(alias.name, original)
 
-    def handle_assign(self, node):
-        """
-        处理赋值语句：
-         - 针对简单赋值（目标为变量名）
-         - 右侧为常量或简单的二元表达式的情况
-         - 多个赋值目标（a = b = ...）均采用相同的值
-        """
-        value = self.evaluate_expr(node.value)
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                var_name = target.id
-                if self.current_scope[-1] == "global":
-                    self.variable_map[var_name] = value
-            # 可以扩展支持其他类型的赋值目标（例如元组解包等）
-
     def _add_alias(self, alias, original):
         """将别名记录到当前作用域（这里只记录全局作用域的别名）"""
         if self.current_scope[-1] == "global":
@@ -96,6 +82,25 @@ class CodeAnalyzerManual:
         else:
             # 如果需要记录局部作用域的别名，可在此处扩展
             pass
+
+    def handle_assign(self, node):
+        value = self.evaluate_expr(node.value)
+        # 如果 value 是 operator，则 value 为 operator id
+        # 查找 operator 对象，取 returnType 作为变量类型
+        var_type = None
+        if isinstance(value, OperatorResult) and value.op_id in self.operators:
+            # op_obj = self.operators[value]
+            # var_type = op_obj.get("returnType", op_obj.get("operatorType"))
+            var_type = self.operators[value.op_id].op_type
+            value = value.op_id
+            print(var_type)
+
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                var_name = target.id
+                if self.current_scope[-1] == "global":
+                    self.variable_map[var_name] = VariableInfo(var_name, value, var_type)
+            # 可以扩展支持其他类型的赋值目标（例如元组解包等）
 
     def evaluate_expr(self, node):
         """
@@ -126,7 +131,8 @@ class CodeAnalyzerManual:
         elif isinstance(node, ast.List):
             return [self.evaluate_expr(element) for element in node.elts]
         elif isinstance(node, ast.Name):
-            return self.variable_map.get(node.id, None)
+            var_info = self.variable_map.get(node.id, None)
+            return var_info.value if var_info is not None else None
         elif isinstance(node, ast.Call):
             return self.handle_call(node)
             # func_name = self.resolve_func_name(node.func)
@@ -150,22 +156,23 @@ class CodeAnalyzerManual:
         return None
 
     def handle_call(self, node):
+        # todo 或许在添加的type以后可以移动这个
         if isinstance(node.func, ast.Attribute) and node.func.attr == "append":
             return self.handle_append(node)
 
         func_name = self.resolve_func_name(node.func)
         if func_name in self.call_handlers:
-            operator = self.call_handlers[func_name](node)
-            self.operators[operator["operatorID"]] = operator
-            self.create_links_for_call(operator["operatorID"], node)
-            return operator["operatorID"]
+            operator: OperatorResult = self.call_handlers[func_name](node)
+            self.operators[operator.op_id] = operator
+            self.create_links_for_call(operator.op_id, node)
+            return operator
         else:
-            # 默认处理
+            # 默认处理 还没有测试 可以写一个类与operatorResult的类型一致（继承）
             args = [self.evaluate_expr(arg) for arg in node.args]
             keywords = {kw.arg: self.evaluate_expr(kw.value) for kw in node.keywords}
             return {"call": {"function": func_name, "args": args, "keywords": keywords}}
 
-    def handle_pandas_read_csv(self, node):
+    def handle_pandas_read_csv(self, node) -> OperatorResult:
         """
         自定义处理器：将 pandas.read_csv 转换为 CSVFileScan operator 的 JSON 格式
         规则：
@@ -211,41 +218,36 @@ class CodeAnalyzerManual:
             "dynamicInputPorts": False,
             "dynamicOutputPorts": False
         }
-        return operator
+        return OperatorResult(operator["operatorID"], "pandas.DataFrame", operator)
 
     def handle_append(self, node):
         """
         自定义处理器：处理列表的 append 调用。
         规则：
-          - 获取调用对象（例如变量 a），检查该变量是否存在且为列表
+          - 获取调用对象（例如变量 a），检查该变量是否存在且为列表（通过 VariableInfo.value）
           - 解析第一个参数的值，并追加到该列表中
           - 返回 None，模拟列表 append 的返回值
         """
-        # 确保是属性调用
         if not (isinstance(node.func, ast.Attribute) and node.func.attr == "append"):
             return None
-        # 获取调用对象：例如 a.append(...) 中 a
         target_node = node.func.value
         if isinstance(target_node, ast.Name):
             var_name = target_node.id
-            # 查找该变量是否已存在且为列表
-            current_list = self.variable_map.get(var_name, None)
-            if isinstance(current_list, list):
-                # 如果存在传入参数，则追加到列表中
+            var_info = self.variable_map.get(var_name, None)
+            if var_info is not None and isinstance(var_info.value, list):
                 if node.args:
                     append_value = self.evaluate_expr(node.args[0])
-                    current_list.append(append_value)
-        # append 返回 None
+                    var_info.value.append(append_value)
         return None
 
-    def handle_pandas_concat(self, node):
+    def handle_pandas_concat(self, node) -> OperatorResult:
         """
         自定义处理器：将 pandas.concat 转换为 Concat operator 的 JSON 格式
         规则：
           - 第一个位置参数应为一个列表（包含待连接对象），记录到 operatorProperties 中
           - 关键字参数如 axis、ignore_index 等也记录到 operatorProperties 中
         """
-        # 取第一个位置参数作为待连接对象列表
+        # # 取第一个位置参数作为待连接对象列表
         concat_list = self.evaluate_expr(node.args[0]) if node.args else []
         operator = {
             "operatorID": f"Union-operator-{uuid.uuid4()}",
@@ -275,7 +277,7 @@ class CodeAnalyzerManual:
             "dynamicInputPorts": False,
             "dynamicOutputPorts": False
         }
-        return operator
+        return OperatorResult(operator["operatorID"], "pandas.DataFrame", operator)
 
     def create_links_for_call(self, current_operator_id, call_node):
         """
@@ -297,15 +299,15 @@ class CodeAnalyzerManual:
             self.create_link(src_id, current_operator_id)
 
     def collect_operator_ids(self, value):
-        """
-        递归扫描 value，若为 operator id（存在于 self.operators 中），则返回列表
-        """
         result = []
         if isinstance(value, list):
             for item in value:
                 result.extend(self.collect_operator_ids(item))
-        elif isinstance(value, str) and value in self.operators:
-            result.append(value)
+        elif isinstance(value, VariableInfo):
+            if isinstance(value.value, list):
+                result.extend(self.collect_operator_ids(value.value))
+            elif isinstance(value.value, str) and value.value in self.operators:
+                result.append(value.value)
         return result
 
     def create_link(self, source_op, target_op, source_port="output-0", target_port="input-0"):
@@ -330,6 +332,15 @@ if __name__ == '__main__':
     test_code = textwrap.dedent("""
         import pandas as pd
 
+        a = 123
+        b = "string"
+        
+        c = a
+        d = []
+        d.append(a)
+        d.append(321)
+        
+
         # 模拟 CSVFileScan 生成
         res_csv1 = pd.read_csv("data1.csv", encoding="UTF_8", sep=",", header=0)
         res_csv2 = pd.read_csv("data2.csv", encoding="UTF_8", sep=",", header=0)
@@ -349,11 +360,11 @@ if __name__ == '__main__':
 
     print("\n全局变量映射：")
     for var, val in analyzer.variable_map.items():
-        print(f"{var} -> {val}")
+        print(f"{var} -> {val.name}, {val.type}, {val.value}")
 
     print("\n生成的 Operators：")
     for op_id, op in analyzer.operators.items():
-        print(op)
+        print(op.op_id, op.op_type, op.op_content)
 
     print("\n生成的 Links：")
     for link_id, link in analyzer.links.items():
@@ -361,8 +372,8 @@ if __name__ == '__main__':
 
     # 构造 workflow JSON 结构
     workflow = {
-        "operators": list(analyzer.operators.values()),
-        "operatorPositions": { op_id: {"x": 0, "y": 0} for op_id in analyzer.operators },
+        "operators": [op.op_content for op in analyzer.operators.values()],
+        "operatorPositions": {op_id: {"x": 0, "y": 0} for op_id in analyzer.operators},
         "links": list(analyzer.links.values()),
         "commentBoxes": [],
         "settings": {
@@ -373,4 +384,4 @@ if __name__ == '__main__':
     with open("workflow.json", "w", encoding="utf-8") as f:
         json.dump(workflow, f, indent=2)
 
-    print(json.dumps(workflow, indent=2))
+    # print(json.dumps(workflow, indent=2))
